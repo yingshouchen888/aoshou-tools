@@ -16,7 +16,7 @@
 
 ## 工具清單
 （之後加新工具時會自動更新）
-- **meinong-flood-map** — 美濃歷年淹水熱點對照圖（`tools/meinong-flood-map/meinong-flood-map_V1.2.html`），以高美診所為對照點，含事件年表、易淹水里名單、新診所選址建議；紀錄檔 `淹水紀錄_V1.2.md`。修改時升版建新檔。
+- **meinong-flood-map** — 美濃歷年淹水熱點對照圖（`tools/meinong-flood-map/meinong-flood-map_V1.3.html`），以高美診所為對照點，含事件年表、易淹水里名單、新診所選址建議；紀錄檔 `淹水紀錄_V1.3.md`。修改時升版建新檔。
 
 ## 工作注意事項
 - 學生資料一律去識別化（只用座號 + 班級代號）
