@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>美濃歷年淹水圖</title>
+<!--
+  美濃歷年淹水熱點對照圖 V1.6（2026-09-20）
+  V1.6 變更：所有「距離」一律標明為直線距離（非道路距離），避免誤讀。
+  V1.5 變更：加入地形底圖（Google 地形、OpenTopoMap 等高線）；頁面開啟時於瀏覽器端向 Open-Meteo
+            高程 API（Copernicus DEM 90 m）查詢各點高程，側欄新增「高程比較（相對高美診所）」表，
+            彈窗同步顯示高程；低於診所的點以紅字標示。
+  V1.4 變更：新增「民生東苑附近（民生路）」實測點（陳醫師提供 22.8990792, 120.5467618），
+            2024 年（凱米）曾淹水；此點與水利署易淹道路「民生路」相符。
+  V1.3 變更：新增「淹水末端（敬字亭附近）」實測點（陳醫師提供 22.9023055, 120.5340391），
+            高風險帶向西北延伸至此，涵蓋 敬字亭→三洽水→中正路→區公所 全段。
+  V1.2 變更：美濃區公所改用陳醫師提供的實測座標（22.8942956, 120.5425575），衛生所併入同一區；
+            以美濃橋（北）與區公所（南）兩個實測點為錨，重排中正路一段沿線的農會、郵局／泰安橋、
+            信義街口推估位置，並將「三洽水→中正路」高風險帶移到正確範圍。
+  V1.1 變更：高美診所改用陳醫師提供的實測座標（成功路新光大樓，22.8940161, 120.5471987），
+            該址依現場觀察從未淹水；東門樓、民生路／南中街改為「名單參考」空心標記（僅列入易淹水里／路，
+            無具體淹水紀錄），並與 2007 事件脫鉤；診所段文字與選址建議同步修正。
+  V1.0 變更：初版。整理 1957 起至 2026 米克拉的淹水事件、致災機轉、水利署易淹水里名單，
+            以高美診所（成功路 139 號）為對照點，提供 OSM / Google 街道 / Google 衛星三種底圖比對。
+  座標說明：★ 為公開來源座標；☆ 為依門牌與相對位置推估（誤差約 100–300 m），
+            以點擊彈窗內「Google 地圖」連結核對為準。
+-->
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+  :root{
+    --bg:#f6f4ef; --panel:#ffffff; --ink:#1f2933; --muted:#5f6b7a; --line:#e3e0d8;
+    --flood:#c0392b; --flood-soft:rgba(192,57,43,.18); --clinic:#1f6feb; --lake:#0e7490;
+    --zone:#d97706; --chip:#f1efe8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171c; --panel:#1c2128; --ink:#e6e8eb; --muted:#9aa4b2; --line:#2d333b;
+      --flood:#ef5350; --flood-soft:rgba(239,83,80,.22); --clinic:#58a6ff; --lake:#22b8cf;
+      --zone:#f59e0b; --chip:#262c35;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171c; --panel:#1c2128; --ink:#e6e8eb; --muted:#9aa4b2; --line:#2d333b;
+    --flood:#ef5350; --flood-soft:rgba(239,83,80,.22); --clinic:#58a6ff; --lake:#22b8cf;
+    --zone:#f59e0b; --chip:#262c35;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:18px;margin:0}
+  header .sub{color:var(--muted);font-size:13px}
+  header .ver{margin-left:auto;font-size:12px;color:var(--muted)}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:calc(100% - 54px)}
+  #map{height:100%;min-height:420px;background:#dfe6ea}
+  aside{overflow:auto;border-left:1px solid var(--line);background:var(--panel);padding:14px 16px 32px}
+  aside h2{font-size:15px;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+  aside h2:first-child{margin-top:4px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+  .dot.flood{background:var(--flood)} .dot.clinic{background:var(--clinic)} .dot.lake{background:var(--lake)}
+  .dot.list{background:transparent;border-color:var(--flood)}
+  .swatch{width:16px;height:10px;border:2px dashed var(--zone);display:inline-block}
+  .toggles{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .toggles label{background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:13px;cursor:pointer;user-select:none}
+  .toggles input{margin-right:4px}
+  ol.timeline{list-style:none;margin:0;padding:0}
+  ol.timeline li{padding:6px 0 6px 14px;border-left:3px solid var(--flood-soft);margin-left:4px;cursor:pointer}
+  ol.timeline li:hover{border-left-color:var(--flood)}
+  ol.timeline b{display:block}
+  ol.timeline small{color:var(--muted)}
+  ul{padding-left:18px;margin:6px 0}
+  li{margin:3px 0}
+  .note{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px}
+  .muted{color:var(--muted);font-size:13px}
+  table.elev{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+  table.elev th,table.elev td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
+  table.elev td.n{text-align:right;white-space:nowrap}
+  table.elev tr.low td{color:var(--flood)}
+  table.elev tr.me td{font-weight:700;color:var(--clinic)}
+  .leaflet-popup-content .elev{font-size:12px;color:#555;margin-bottom:4px}
+  a{color:var(--clinic)}
+  .leaflet-popup-content{font-size:14px;line-height:1.5;margin:10px 12px}
+  .leaflet-popup-content h3{margin:0 0 4px;font-size:15px}
+  .leaflet-popup-content .tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:999px;background:var(--flood-soft);color:var(--flood);margin-bottom:4px}
+  .leaflet-popup-content ul{padding-left:16px;margin:4px 0}
+  .leaflet-popup-content .acc{font-size:12px;color:#777}
+  .leaflet-container{font-family:inherit}
+  .clinic-icon{width:26px;height:26px;border-radius:50%;background:var(--clinic);border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
+  .lbl{background:transparent;border:0;box-shadow:none;font-size:12px;font-weight:600;color:#7a1f16;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;white-space:nowrap}
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr;height:auto}
+    #map{height:62vh}
+    aside{border-left:0;border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>美濃歷年淹水熱點對照圖</h1>
+  <span class="sub">高雄市美濃區 · 以高美診所為對照點 · 底圖可切換 OSM／Google 街道／衛星／地形／等高線</span>
+  <span class="ver">V1.6 · 2026-09-20</span>
+</header>
+<div class="wrap">
+  <div id="map"></div>
+  <aside>
+    <h2>圖例</h2>
+    <div class="legend">
+      <span><i class="dot flood"></i>淹水熱點（越大＝紀錄越多）</span>
+      <span><i class="dot clinic"></i>高美診所</span>
+      <span><i class="dot lake"></i>美濃湖／溢流</span>
+      <span><i class="dot list"></i>名單參考（無具體紀錄）</span>
+      <span><i class="swatch"></i>敬字亭→三洽水→中正路 高風險帶</span>
+    </div>
+    <div class="toggles" id="toggles"></div>
+    <p class="muted">★ 公開來源或實測座標；☆ 依門牌與相對位置推估（誤差約 100–300 m）。點彈窗內「Google 地圖」連結可直接核對現況。</p>
+
+    <h2>歷年重大淹水事件</h2>
+    <ol class="timeline" id="timeline"></ol>
+
+    <h2>高程比較（相對高美診所）</h2>
+    <div class="note" id="elevnote">正在查詢各點高程…</div>
+    <table class="elev" id="elevtbl" hidden></table>
+    <p class="muted">高程來源：Open-Meteo Elevation API（Copernicus DEM 90 m）。網格 90 m、誤差可達數公尺，只能看趨勢，不代表門前實際地面高。</p>
+
+    <h2>致災機轉</h2>
+    <div class="note">
+      核心在<b>三洽水</b>（天后宮前）：美濃溪主河道、中正湖排水、竹子門排水在此匯流，一旦排不出去，水就衝進聚落。
+      2024 凱米時主河道排水不及，洪水反向往上游<b>迴水</b>，因此淹水從農會一路延伸到區公所，整條中正路成為汪洋；美濃湖也因水量過大溢流。
+    </div>
+
+    <h2>水利署易淹水里／路段</h2>
+    <ul>
+      <li><b>易淹水里</b>：合和（高美診所所在）、泰安、福安、東門、祿興、吉洋、清水、獅山、瀰濃、中圳、中壇</li>
+      <li><b>易淹道路</b>：南中街、民生路、中正路</li>
+    </ul>
+
+    <h2>與高美診所的關係</h2>
+    <div class="note">
+      高美診所（成功路 139 號新光大樓，4–6 樓）位於老街南側，直線距離：東門樓西南約 250 m、區公所東方約 480 m、三洽水約 900 m（皆為直線，非道路距離），
+      <b>在高風險帶之外</b>；依陳醫師現場觀察，本址從未淹水。
+      需留意的是接送動線：若經中正路一段（農會、郵局、泰安橋）或福美路往廣興，豪雨時可能中斷，宜改走未列入名單的路線。
+    </div>
+
+    <h2>新診所選址建議</h2>
+    <ul>
+      <li>避開<b>敬字亭→三洽水→中正路</b>一帶（西北端到敬字亭附近，沿中正路經農會、郵局、泰安橋到區公所／衛生所）。</li>
+      <li>避開<b>美濃湖周邊</b>聚落（凱米時最深 160 cm）。</li>
+      <li>成功路新光大樓一帶（老街南側高地）從未淹水，可作為候選區域的參考基準。</li>
+      <li>避開名單內的易淹水里；購地前查<a href="https://dmap.ncdr.nat.gov.tw/1109/map/" target="_blank" rel="noopener">NCDR 3D 災害潛勢地圖</a>與<a href="https://wrb.kcg.gov.tw/Business/DisasterPrevention/Flooding.htm" target="_blank" rel="noopener">高雄市水利局淹水潛勢圖</a>的地號資料，以及該地塊過去的淹水通報紀錄。</li>
+    </ul>
+
+    <h2>資料來源</h2>
+    <ul class="muted" id="sources"></ul>
+  </aside>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script>
+const CLINIC = {name:'高美診所', lat:22.8940161, lng:120.5471987, acc:'★', addr:'美濃區成功路 139 號 新光大樓 4–6 樓'};
+
+const EVENTS = [
+  {id:'e1957', year:'1957 起', title:'累計約 81 場大小淹水', text:'據地方刊物統計，美濃自 1957 年起累計經歷約 81 場淹水。'},
+  {id:'e2005', year:'2005', title:'6 月豪雨連泡 4 天；7 月海棠 3 天淹 5 次', text:'6 月連日豪雨造成大半區域連泡 4 天；7 月海棠颱風西南氣流又導致 3 天內淹水 5 次。'},
+  {id:'e2007', year:'2007-08-13', title:'單日 500.5 mm，最深 150 cm', text:'當時被稱為史上最嚴重，美濃溪暴漲，最深水位達 150 cm。'},
+  {id:'e2009', year:'2009 莫拉克', title:'淹水面積 150 公頃', text:'平均淹水深度約 1.7 m。之後美濃治水累計投入 4.39 億元。'},
+  {id:'e2016', year:'2016 梅姬', title:'中正路一帶水深約 60 cm', text:'美濃、甲仙雨量達 200 年重現期；粄條街淹超過 50 cm。美濃溪雖已投入數十億整治仍淹水。'},
+  {id:'e2018', year:'2018-08-23', title:'823 豪雨：泰安橋溢流、媽祖廟前庭淹水', text:'郵局旁泰安橋溪水溢上路面，福美路往廣興方向無法通車，媽祖廟前庭也淹水。'},
+  {id:'e2024', year:'2024-07 凱米', title:'美濃溪溢流，中正路成汪洋；湖畔最深 160 cm', text:'淹水從農會一路延伸到區公所，整條中正路成為汪洋；美濃湖溢流，鄰近聚落最深 160 cm。淹水面積 46 公頃（莫拉克 150 公頃的 30%），平均深度由 1.7 m 降至 0.7 m。美濃溪水位 1 小時內暴漲、幾可觸及美濃橋面。'},
+  {id:'e2026', year:'2026-06-25 米克拉外圍環流', title:'中正路二段／信義街水淹上橋面', text:'午前 11 時累積雨量逾 350 mm。部分民宅水深及膝；中正路二段與信義街水圳排水不及，水淹上橋面；廣興街 601 巷、福美路與美竹橋段積淹水。'}
+];
+
+// events: which event ids hit this spot; depth in cm when known
+const SPOTS = [
+  {name:'民生東苑附近（民生路）', lat:22.8990792, lng:120.5467618, acc:'★', kind:'flood', dir:'top',
+   q:'美濃 民生東苑', events:['e2024'], why:'陳醫師現場觀察：民生東苑一帶 2024 年曾淹水；民生路列水利署易淹道路。距高美診所直線約 560 m（正北）。'},
+  {name:'淹水末端（敬字亭附近）', lat:22.9023055, lng:120.5340391, acc:'★', kind:'flood', dir:'top',
+   q:'瀰濃庄敬字亭', events:['e2024'], why:'陳醫師現場觀察：淹水由三洽水向西北延伸的末端，約在敬字亭附近。'},
+  {name:'三洽水（天后宮前）', lat:22.8986, lng:120.5398, acc:'★', kind:'flood',
+   q:'美濃天后宮', events:['e2018','e2024'], why:'美濃溪、中正湖排水、竹子門排水在此匯流；排不及即衝進聚落。823 豪雨媽祖廟前庭淹水。'},
+  {name:'美濃橋（中正路一段起點）', lat:22.8989, lng:120.5424, acc:'★', kind:'flood', dir:'top',
+   q:'美濃橋 美濃溪', events:['e2007','e2024'], why:'凱米：美濃溪 1 小時內暴漲、水位幾可觸及橋面（水利署美濃橋監視站）。'},
+  {name:'美濃區農會（中正路一段 1 號）', lat:22.8983, lng:120.5424, acc:'☆', kind:'flood',
+   q:'美濃區農會', events:['e2016','e2024'], why:'凱米淹水起點：從農會沿中正路往北淹到區公所。梅姬時中正路一帶約 60 cm。'},
+  {name:'美濃郵局旁 泰安橋', lat:22.8970, lng:120.5426, acc:'☆', kind:'flood',
+   q:'美濃郵局 中正路一段39號', events:['e2018','e2024'], why:'823 豪雨：泰安橋溪水溢上路面。'},
+  {name:'美濃區公所／衛生所（美中路）', lat:22.8942956, lng:120.5425575, acc:'★', kind:'flood',
+   q:'高雄市美濃區公所', events:['e2024'], why:'凱米：中正路汪洋的南端；區公所與衛生所同在此淹水區（陳醫師現場觀察）。'},
+  {name:'中正路二段 × 信義街', lat:22.8933, lng:120.5428, acc:'☆', kind:'flood',
+   q:'美濃區中正路二段 信義街', events:['e2026'], why:'米克拉：水圳排水不及，水淹上橋面。'},
+  {name:'民生路／南中街（名單參考）', lat:22.8975, lng:120.5450, acc:'☆', kind:'list',
+   q:'美濃區民生路 南中街', events:[], why:'水利署列為易淹道路（與中正路同列），此點無具體淹水紀錄，僅供參考。'},
+  {name:'東門樓（名單參考）', lat:22.8956, lng:120.5489, acc:'★', kind:'list',
+   q:'瀰濃東門樓', events:[], why:'東門里列入易淹水里名單，此點無具體淹水紀錄，僅供參考。距高美診所直線約 250 m。'},
+  {name:'美濃湖（溢洪道）', lat:22.9073, lng:120.5538, acc:'★', kind:'lake',
+   q:'美濃湖', events:['e2024'], why:'凱米：水量過大溢流，鄰近聚落最深 160 cm。'},
+  {name:'美濃湖畔聚落（中圳里）', lat:22.9052, lng:120.5505, acc:'☆', kind:'flood', depth:160,
+   q:'美濃區中圳里 美濃湖', events:['e2024'], why:'凱米最深 160 cm。'},
+  {name:'福美路・美竹橋段', lat:22.8965, lng:120.5600, acc:'☆', kind:'flood',
+   q:'美濃區福美路 美竹橋', events:['e2018','e2026'], why:'823：福美路往廣興方向無法通車；米克拉：美竹橋段積淹水。'},
+  {name:'廣興街 601 巷', lat:22.8957, lng:120.5745, acc:'☆', kind:'flood',
+   q:'美濃區廣興街601巷', events:['e2026'], why:'米克拉：道路積淹水，警方封閉管制。'}
+];
+
+// 三洽水→中正路 高風險帶（示意多邊形）
+const ZONE = [[22.9034,120.5330],[22.9005,120.5445],[22.8925,120.5452],[22.8918,120.5405],[22.8985,120.5372],[22.9012,120.5326]];
+
+const SOURCES = [
+  ['聯合新聞網 2024-07-25 旗山美濃淹水（凱米）','https://udn.com/news/story/124139/8117511'],
+  ['聯合新聞網 凱米 美濃溪暴漲幾可觸及美濃橋面','https://udn.com/news/story/124139/8117503'],
+  ['高雄市水利局 凱米淹水面積僅莫拉克 9.2%','https://wrb.kcg.gov.tw/ActivitiesDetailC001100.aspx?Cond=e9e13c38-c8a2-4e9b-85f4-9b14a4648441'],
+  ['我們的島 港都遇水劫（凱米）','https://ourisland.pts.org.tw/content/10930'],
+  ['聯合新聞網 2018-08-23 美濃媽祖廟都淹水','https://udn.com/news/story/7266/3325893'],
+  ['環境資訊中心 連續下雨之後――美濃淹水紀實（2005/2007）','https://e-info.org.tw/node/25785'],
+  ['自由時報 2016 梅姬 旗山美濃大淹水','https://news.ltn.com.tw/news/life/breakingnews/1839260'],
+  ['自由時報 2026-06-25 旗山美濃多處積淹水（米克拉）','https://news.ltn.com.tw/news/life/breakingnews/5483410'],
+  ['NCDR 示警：美濃區易淹水里／路段','https://alerts.ncdr.nat.gov.tw/WIN_alertpop.aspx?ap=2186196&ip=10431708&iconImage=Images/calamityIcon150Black_FL.png&EVENT_1=%E6%B7%B9%E6%B0%B4'],
+  ['高雄市水利局 美濃區易淹水地區','https://sites.google.com/site/khsfloodcontrol/shan-qu/mei-nong-qu'],
+  ['美濃區公所 114 年災害潛勢圖','https://meinong-district.kcg.gov.tw/News_Content.aspx?n=69393922D62A69C8&sms=658D43D93DB3BB3C&s=54130B091B1DE628'],
+  ['維基百科 三洽水／美濃湖／東門樓（座標）','https://zh.wikipedia.org/zh-tw/%E4%B8%89%E6%B4%BD%E6%B0%B4'],
+  ['Open-Meteo Elevation API（Copernicus DEM 90 m）','https://open-meteo.com/en/docs/elevation-api'],
+  ['OpenTopoMap 等高線底圖','https://opentopomap.org/']
+];
+
+const fmtDelta = d => (d>0.5?'高 ':d<-0.5?'低 ':'約同高 ')+(Math.abs(d)<0.5?'':Math.abs(d).toFixed(0)+' m');
+const gmaps = q => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q+' 高雄市美濃區')}`;
+const evById = Object.fromEntries(EVENTS.map(e=>[e.id,e]));
+
+const map = L.map('map',{zoomControl:true}).setView([22.8975,120.5480],15);
+const base = {
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}),
+  'Google 街道': L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=zh-TW',{subdomains:['0','1','2','3'],maxZoom:20,attribution:'Google 地圖（僅供個人比對）'}),
+  'Google 衛星': L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=zh-TW',{subdomains:['0','1','2','3'],maxZoom:20,attribution:'Google 地圖（僅供個人比對）'}),
+  'Google 地形': L.tileLayer('https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&hl=zh-TW',{subdomains:['0','1','2','3'],maxZoom:20,attribution:'Google 地圖（僅供個人比對）'}),
+  'OpenTopoMap 等高線': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:['a','b','c'],maxZoom:17,attribution:'© OpenStreetMap contributors, SRTM · OpenTopoMap (CC-BY-SA)'})
+};
+base['Google 地形'].addTo(map);
+L.control.layers(base,null,{position:'topleft'}).addTo(map);
+L.control.scale({imperial:false}).addTo(map);
+
+const zone = L.polygon(ZONE,{color:'#d97706',weight:2,dashArray:'6 6',fillColor:'#d97706',fillOpacity:.08})
+  .bindPopup('<h3>敬字亭 → 三洽水 → 中正路 高風險帶</h3>凱米時洪水由三洽水迴水，沿中正路一路淹到區公所，向西北則延伸到敬字亭附近（陳醫師觀察）。選址建議避開此帶。').addTo(map);
+
+const eventLayers = {};
+EVENTS.forEach(e=>{eventLayers[e.id]=L.layerGroup().addTo(map)});
+const spotMarkers = [];
+
+function popupHtml(s){
+  const evs = s.events.map(id=>`<li>${evById[id].year}：${evById[id].title}</li>`).join('');
+  const tag = s.kind==='list' ? '名單參考・無具體紀錄' : `${s.events.length} 次紀錄${s.depth?`・最深 ${s.depth} cm`:''}`;
+  const el = s.elev==null ? '' : `<div class="elev">高程約 ${s.elev.toFixed(0)} m（較診所 ${fmtDelta(s.elev-CLINIC.elev)}）</div>`;
+  return `<h3>${s.name}</h3><span class="tag">${tag}</span>${el}
+    <div>${s.why}</div>${evs?`<ul>${evs}</ul>`:''}
+    <div class="acc">${s.acc==='★'?'★ 公開來源或實測座標':'☆ 推估位置，請以連結核對'}</div>
+    <a href="${gmaps(s.q)}" target="_blank" rel="noopener">在 Google 地圖開啟「${s.q}」</a>`;
+}
+
+SPOTS.forEach(s=>{
+  const r = s.kind==='list' ? 8 : 9 + (s.events.length-1)*4 + (s.depth?4:0);
+  const color = s.kind==='lake' ? '#0e7490' : '#c0392b';
+  const opt = s.kind==='list' ? {radius:r,color:color,weight:2,dashArray:'3 3',fillColor:'#fff',fillOpacity:.6} : {radius:r,color:'#fff',weight:2,fillColor:color,fillOpacity:.85};
+  const m = L.circleMarker([s.lat,s.lng],opt).bindPopup(popupHtml(s));
+  m.bindTooltip(s.name,{permanent:true,direction:s.dir||'right',offset:s.dir==='top'?[0,-r]:[r,0],className:'lbl'});
+  m._spot = s; spotMarkers.push(m);
+  s.events.forEach(id=>eventLayers[id].addLayer(m));
+  if(s.kind==='list') m.addTo(map);
+});
+
+L.marker([CLINIC.lat,CLINIC.lng],{icon:L.divIcon({className:'',html:'<div class="clinic-icon">＋</div>',iconSize:[26,26],iconAnchor:[13,13]}),zIndexOffset:1000})
+  .bindPopup(`<h3>高美診所</h3>${CLINIC.addr}<br>本址依陳醫師現場觀察從未淹水；洗腎室在 5、6 樓。豪雨時留意接送動線是否經過中正路一段或福美路。<div class="acc">★ 陳醫師提供座標（2026-09-20）</div><a href="${gmaps('高美診所 成功路139號')}" target="_blank" rel="noopener">在 Google 地圖開啟</a>`)
+  .bindTooltip('高美診所（成功路新光大樓）',{permanent:true,direction:'right',offset:[14,0],className:'lbl'}).addTo(map);
+
+// event toggles
+const tg = document.getElementById('toggles');
+EVENTS.forEach(e=>{
+  const id='tg_'+e.id;
+  const lab=document.createElement('label');
+  lab.innerHTML=`<input type="checkbox" id="${id}" checked>${e.year}`;
+  tg.appendChild(lab);
+  lab.querySelector('input').addEventListener('change',refresh);
+});
+function refresh(){
+  const on = new Set(EVENTS.filter(e=>document.getElementById('tg_'+e.id).checked).map(e=>e.id));
+  spotMarkers.forEach(m=>{
+    const show = m._spot.kind==='list' || m._spot.events.some(id=>on.has(id));
+    if(show && !map.hasLayer(m)) m.addTo(map);
+    if(!show && map.hasLayer(m)) map.removeLayer(m);
+  });
+}
+
+// timeline
+const tl=document.getElementById('timeline');
+EVENTS.forEach(e=>{
+  const li=document.createElement('li');
+  li.innerHTML=`<b>${e.year}　${e.title}</b><small>${e.text}</small>`;
+  li.addEventListener('click',()=>{
+    const ms = spotMarkers.filter(m=>m._spot.events.includes(e.id));
+    if(!ms.length) return;
+    map.fitBounds(L.featureGroup(ms).getBounds().pad(.4));
+    if(ms.length===1) ms[0].openPopup();
+  });
+  tl.appendChild(li);
+});
+
+(async function loadElev(){
+  const pts=[CLINIC,...SPOTS];
+  const note=document.getElementById('elevnote'), tbl=document.getElementById('elevtbl');
+  try{
+    const url=`https://api.open-meteo.com/v1/elevation?latitude=${pts.map(p=>p.lat.toFixed(6)).join(',')}&longitude=${pts.map(p=>p.lng.toFixed(6)).join(',')}`;
+    const r=await fetch(url); if(!r.ok) throw new Error(r.status);
+    const j=await r.json(); if(!j.elevation||j.elevation.length!==pts.length) throw new Error('bad');
+    pts.forEach((p,i)=>p.elev=j.elevation[i]);
+    spotMarkers.forEach(m=>m.setPopupContent(popupHtml(m._spot)));
+    const rows=[...pts].sort((a,b)=>a.elev-b.elev).map(p=>{
+      const d=p.elev-CLINIC.elev, me=p===CLINIC;
+      return `<tr class="${me?'me':(d<-0.5?'low':'')}"><td>${me?'高美診所（基準）':p.name}</td><td class="n">${p.elev.toFixed(0)} m</td><td class="n">${me?'—':fmtDelta(d)}</td></tr>`;
+    }).join('');
+    tbl.innerHTML=`<tr><th>地點</th><th>高程</th><th>較診所</th></tr>${rows}`;
+    tbl.hidden=false;
+    const lows=pts.filter(p=>p!==CLINIC&&p.elev-CLINIC.elev<-0.5).length;
+    note.innerHTML=`診所基準高程約 <b>${CLINIC.elev.toFixed(0)} m</b>；${pts.length-1} 個點中有 <b>${lows}</b> 個低於診所（紅字）。點名稱由低到高排列。`;
+  }catch(e){
+    note.textContent='無法取得高程資料（需要網路連線到 api.open-meteo.com）。可改用「OpenTopoMap 等高線」底圖直接讀等高線。';
+  }
+})();
+
+document.getElementById('sources').innerHTML = SOURCES.map(([t,u])=>`<li><a href="${u}" target="_blank" rel="noopener">${t}</a></li>`).join('');
+</script>
+</body>
+</html>
